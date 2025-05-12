@@ -5,7 +5,7 @@ import requests
 import gspread
 from google.oauth2.service_account import Credentials
 import sys
-# import traceback # Uncomment if you want full tracebacks in get_google_sheet_client except
+import traceback # Uncommented for full traceback
 
 # --- Configuration ---
 # These will be loaded from environment variables set by Railway
@@ -18,7 +18,7 @@ POST_DELAY_SECONDS = 30 # Recommended delay between publishing each block
 
 # --- Helper Functions ---
 
-# UPDATED FUNCTION for Railway: get_google_sheet_client to read JSON content from env var
+# UPDATED FUNCTION for Railway: get_google_sheet_client to read JSON content from env var with traceback
 def get_google_sheet_client():
     """Authenticates with Google Sheets using service account JSON content from env var."""
     try:
@@ -38,17 +38,15 @@ def get_google_sheet_client():
             print("Successfully loaded service account info from environment variable.") # Added logging
         except json.JSONDecodeError as e: # Catch JSONDecodeError specifically
              print(f"Error reading credentials from env var: Could not decode JSON from GOOGLE_CREDENTIALS_JSON_CONTENT. Content might be invalid JSON.", file=sys.stderr)
-             # --- ADDED EXCEPTION DETAILS PRINTING ---
              print(f"Exception type (JSONDecodeError): {type(e)}", file=sys.stderr)
              print(f"Exception details (JSONDecodeError): {e}", file=sys.stderr)
-             # --- END ADDED EXCEPTION DETAILS PRINTING ---
+             traceback.print_exc(file=sys.stderr) # Print traceback for JSON decode error
              return None
         except Exception as e: # Catch any other errors during credential processing
              print(f"Error processing credentials from environment variable: {e}", file=sys.stderr)
-             # --- ADDED EXCEPTION DETAILS PRINTING ---
              print(f"Exception type: {type(e)}", file=sys.stderr)
              print(f"Exception details: {e}", file=sys.stderr)
-             # --- END ADDED EXCEPTION DETAILS PRINTING ---
+             traceback.print_exc(file=sys.stderr) # Print traceback for other credential errors
              return None
 
 
@@ -66,8 +64,8 @@ def get_google_sheet_client():
         print(f"Exception type: {type(e)}", file=sys.stderr)
         print(f"Exception details: {e}", file=sys.stderr)
         # Optional: uncomment below to print full traceback on Railway logs
-        # import traceback
-        # traceback.print_exc(file=sys.stderr)
+        # import traceback # This line is commented out here, but uncommented at the top
+        traceback.print_exc(file=sys.stderr) # Uncommented for full traceback
         return None
 
 
