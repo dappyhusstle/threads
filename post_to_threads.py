@@ -5,7 +5,8 @@ import requests
 import gspread
 from google.oauth2.service_account import Credentials
 import sys
-import traceback # Uncommented for full traceback
+import traceback # Keep this uncommented for debugging if needed
+from flask import Flask, request, jsonify # <-- IMPORT FLASK HERE
 
 # --- Configuration ---
 # These will be loaded from environment variables set by Railway
@@ -18,7 +19,7 @@ POST_DELAY_SECONDS = 30 # Recommended delay between publishing each block
 
 # --- Helper Functions ---
 
-# UPDATED FUNCTION for Railway: get_google_sheet_client to read JSON content from env var with traceback
+# get_google_sheet_client function (same as before, with traceback)
 def get_google_sheet_client():
     """Authenticates with Google Sheets using service account JSON content from env var."""
     try:
@@ -63,13 +64,11 @@ def get_google_sheet_client():
         print(f"Error connecting to Google Sheets after loading credentials.", file=sys.stderr)
         print(f"Exception type: {type(e)}", file=sys.stderr)
         print(f"Exception details: {e}", file=sys.stderr)
-        # Optional: uncomment below to print full traceback on Railway logs
-        # import traceback # This line is commented out here, but uncommented at the top
-        traceback.print_exc(file=sys.stderr) # Uncommented for full traceback
+        traceback.print_exc(file=sys.stderr) # Keep this uncommented
         return None
 
 
-# get_post_data function (same as previous version with added logging)
+# get_post_data function (same as before)
 def get_post_data(sheet, post_id):
     """Reads a specific row from the Ready_To_Post sheet by Post_ID."""
     try:
@@ -113,7 +112,7 @@ def get_post_data(sheet, post_id):
         print(f"Error reading post data for Post_ID {post_id} after worksheet access: {e}", file=sys.stderr) # Clarified error source
         return None, None # Return None on any other error
 
-# update_post_status function (same as previous version with added logging)
+# update_post_status function (same as before)
 def update_post_status(sheet, row_index, status, threads_post_id=None, notes=None):
     """Updates the Status, Threads_Post_ID, and Notes columns for a row."""
     # Need to re-get worksheet in case sheet object becomes stale (though less likely in a short script)
@@ -226,16 +225,10 @@ def publish_threads_container(user_id, access_token, creation_id):
         return None
 
 
-# --- Main Execution ---
-
-if __name__ == "__main__":
-    # Expecting Post_ID and Account Name as command-line arguments
-    if len(sys.argv) != 3:
-        print("Usage: python post_to_threads.py <post_id> <account_name>", file=sys.stderr)
-        sys.exit(1)
-
-    post_id_to_post = sys.argv[1]
-    account_name_to_use = sys.argv[2]
+# --- Core Bot Logic Function (Refactored from main block) ---
+# This function contains the logic to process a single post
+def process_post(post_id_to_post, account_name_to_use):
+    print(f"Processing request for Post_ID: {post_id_to_post}, Account: {account_name_to_use}") # Added logging
 
     # Retrieve account-specific credentials from environment variables
     threads_user_id = os.environ.get(f'THREADS_USER_ID_{account_name_to_use.upper()}')
@@ -244,30 +237,32 @@ if __name__ == "__main__":
     if not threads_user_id or not threads_access_token:
         error_note = f"Threads credentials not found for account '{account_name_to_use}'."
         print(f"Error: {error_note}", file=sys.stderr)
-        sys.exit(1) # Exit if credentials missing
+        return {'status': 'failure', 'error_message': error_note} # Return failure status
+
 
     # 1. Connect to Google Sheets and get post data
     sheet = get_google_sheet_client()
     if not sheet:
         # Error message already printed by get_google_sheet_client
-        sys.exit(1) # Exit if sheet connection failed
+        # No sheet connection, can't log status to sheet for this error
+        return {'status': 'failure', 'error_message': 'Failed to connect to Google Sheets.'}
 
-    # --- ADDED LOGGING HERE (Keep this line) ---
+
     print("Successfully obtained sheet object, proceeding to get post data.")
-    # --- END ADDED LOGGING ---
 
     post_data, row_index = get_post_data(sheet, post_id_to_post)
 
     if not post_data or row_index is None:
+        # Error message already printed by get_post_data if data not found/ready
+        # Attempt to log error status to sheet if possible
         re_sheet = get_google_sheet_client() # Attempt re-connection for logging
-        if re_sheet and row_index is not None:
+        if re_sheet and row_index is not None: # Only try to update status if row_index was found but status wasn't "Ready" or other data error
              update_post_status(re_sheet, row_index, "Error", notes="Post data not found or status not Ready.")
-        elif re_sheet:
-             pass # Error message already printed by get_post_data if row_index is None
-        else:
-             print("Error: Could not connect to sheet to log status after data fetch failure.", file=sys.stderr)
-        sys.exit(1)
+        # If re_sheet fails or row_index is None, can't update status in sheet for this error
+        return {'status': 'failure', 'error_message': 'Post data not found or status not Ready.'}
 
+
+    # Extract block content - using .get with default empty string for safety
     blocks_content = [
         post_data.get('Block_1_Content', ''),
         post_data.get('Block_2_Content', ''),
@@ -275,11 +270,13 @@ if __name__ == "__main__":
         post_data.get('Block_4_Content', '')
     ]
 
-    if not any(block.strip() for block in blocks_content):
+    # Basic validation: check if at least one block has content
+    if not any(block.strip() for block in blocks_content): # Check if all blocks are empty or just whitespace
         error_note = f"No content found for Post_ID {post_id_to_post} in any block."
         print(f"Error: {error_note}", file=sys.stderr)
         update_post_status(sheet, row_index, "Error", notes=error_note)
-        sys.exit(1)
+        return {'status': 'failure', 'error_message': error_note}
+
 
     # 2. Update status to "Posting"
     try:
@@ -287,15 +284,18 @@ if __name__ == "__main__":
         print(f"Successfully updated status to Posting for row {row_index}.")
     except Exception as e:
          print(f"Warning: Failed initial status update to 'Posting' for row {row_index}: {e}", file=sys.stderr)
-         re_sheet = get_google_sheet_client() # Attempt re-connection
-         if re_sheet:
+         # Attempt to re-connect and update again
+         re_sheet = get_google_sheet_client()
+         if re_sheet and row_index is not None:
              try:
                  update_post_status(re_sheet, row_index, "Posting")
                  print(f"Successfully updated status to Posting after re-connection for row {row_index}.")
              except Exception as e2:
                   print(f"Error: Failed status update to 'Posting' even after re-connection for row {row_index}: {e2}", file=sys.stderr)
+                  # Decide if we should exit here or continue. For now, let's continue but be aware status might be wrong.
          else:
              print("Error: Could not re-connect to sheet to update status to Posting.", file=sys.stderr)
+
 
     print(f"Starting to post Post_ID {post_id_to_post} for account {account_name_to_use}")
 
@@ -307,23 +307,27 @@ if __name__ == "__main__":
 
     for i, block_content in enumerate(blocks_content):
         block_number = i + 1
+        # Only attempt to post if the block has content after stripping whitespace
         if not block_content.strip():
              print(f"Warning: Block {block_number} is empty or contains only whitespace. Skipping.", file=sys.stderr)
+             # Add empty block placeholder to full_post_content for consistency in logging
              full_post_content += f"[Block {block_number} - Empty]\n---\n"
-             continue
+             continue # Skip empty blocks
 
         print(f"Attempting to post Block {block_number}...")
 
+        # Create container
         creation_id = create_threads_container(
             threads_user_id,
             threads_access_token,
-            block_content.strip(),
-            reply_to_id=previous_block_media_id
+            block_content.strip(), # Strip whitespace from content before sending to API
+            reply_to_id=previous_block_media_id # reply_to_id is None for the first block
         )
 
         if not creation_id:
             print(f"Failed to create container for Block {block_number}. Aborting post.", file=sys.stderr)
             posting_successful = False
+            # Attempt to update status on failure
             try:
                 re_sheet = get_google_sheet_client()
                 if re_sheet and row_index is not None:
@@ -334,11 +338,14 @@ if __name__ == "__main__":
                      print("Error: Could not reconnect to sheet to log status after container creation failure.", file=sys.stderr)
             except Exception as sheet_err:
                  print(f"Error attempting to log sheet status after API failure: {sheet_err}", file=sys.stderr)
-            break
 
+            break # Stop if container creation fails
+
+        # Wait before publishing
         print(f"Waiting {POST_DELAY_SECONDS} seconds before publishing Block {block_number}...")
         time.sleep(POST_DELAY_SECONDS)
 
+        # Publish container
         published_media_id = publish_threads_container(
             threads_user_id,
             threads_access_token,
@@ -348,6 +355,7 @@ if __name__ == "__main__":
         if not published_media_id:
             print(f"Failed to publish container for Block {block_number}. Aborting post.", file=sys.stderr)
             posting_successful = False
+             # Attempt to update status on failure
             try:
                 re_sheet = get_google_sheet_client()
                 if re_sheet and row_index is not None:
@@ -358,29 +366,34 @@ if __name__ == "__main__":
                      print("Error: Could not reconnect to sheet to log status after container publishing failure.", file=sys.stderr)
             except Exception as sheet_err:
                  print(f"Error attempting to log sheet status after API failure: {sheet_err}", file=sys.stderr)
-            break
+            break # Stop if publishing fails
 
+        # Store IDs for the next block or logging
         if block_number == 1:
-            root_threads_media_id = published_media_id
-        previous_block_media_id = published_media_id
+            root_threads_media_id = published_media_id # This is the ID for insight logging
+        previous_block_media_id = published_media_id # This is the ID for the next reply
 
-        full_post_content += block_content.strip() + "\n---\n"
+        full_post_content += block_content.strip() + "\n---\n" # Concatenate content for logging, strip whitespace
+
 
     # 4. Update sheet status based on posting result
+    # Ensure sheet object is still valid, or try to re-connect if needed before final status update
     try:
-        sheet_for_final_update = get_google_sheet_client()
+        sheet_for_final_update = get_google_sheet_client() # Try to get a fresh sheet connection for the final update
         if not sheet_for_final_update:
              print("Error: Could not get a fresh sheet connection for final status update.", file=sys.stderr)
-             sheet_for_final_update = sheet
+             # If getting a fresh connection fails, we use the potentially stale 'sheet' object from earlier
+             sheet_for_final_update = sheet # Use the potentially stale sheet object
+
 
         output_data = {
             'account_name': account_name_to_use,
-            'full_post_content': full_post_content.strip()
+            'full_post_content': full_post_content.strip() # Remove trailing separator and newline
         }
 
         if posting_successful and root_threads_media_id:
             print(f"Successfully posted thread. Root ID: {root_threads_media_id}")
-            if sheet_for_final_update and row_index is not None:
+            if sheet_for_final_update and row_index is not None: # Ensure sheet object is valid and row_index exists
                 update_post_status(sheet_for_final_update, row_index, "Posted", threads_post_id=root_threads_media_id)
             elif sheet_for_final_update:
                  print("Warning: Posting was successful but failed to update sheet status to 'Posted' (no row_index).", file=sys.stderr)
@@ -391,27 +404,75 @@ if __name__ == "__main__":
         else:
             error_note = "Posting failed or incomplete."
             print(f"Error: {error_note}", file=sys.stderr)
-            if sheet_for_final_update and row_index is not None:
+            if sheet_for_final_update and row_index is not None: # Ensure sheet object is valid and row_index exists
                 update_post_status(sheet_for_final_update, row_index, "Error", notes=error_note)
             elif sheet_for_final_update:
                  print("Warning: Posting failed but failed to update sheet status to 'Error' (no row_index).", file=sys.stderr)
             else:
                  print("Warning: Posting failed but failed to update sheet status to 'Error' (no sheet connection).", file=sys.stderr)
             output_data['status'] = 'failure'
-            output_data['error_message'] = error_note
+            output_data['error_message'] = error_note # Use the generic error note for output
 
     except Exception as e:
          print(f"Critical Error during final status update or output preparation: {e}", file=sys.stderr)
-         output_data = {
+         output_data = { # Ensure output data is created even if final processing fails
             'account_name': account_name_to_use,
             'full_post_content': full_post_content.strip(),
             'status': 'failure',
             'error_message': f"Critical error during final processing: {e}"
          }
 
-    print(json.dumps(output_data))
+    # Return the output data dictionary
+    return output_data
 
-    if not posting_successful:
-        sys.exit(1)
-    else:
-        sys.exit(0)
+
+# --- Flask Web Server Setup ---
+app = Flask(__name__)
+
+# Define an endpoint that n8n will send requests to
+# We'll use a POST request and expect JSON data in the body
+@app.route('/process_post', methods=['POST'])
+def process_post_endpoint():
+    # Log that a request was received
+    print("Received request at /process_post endpoint.")
+
+    # Get the JSON data from the request body
+    # This is where n8n will send {"post_id": "...", "account_name": "..."}
+    request_data = request.get_json()
+
+    # Check if the required data is in the JSON body
+    if not request_data or 'post_id' not in request_data or 'account_name' not in request_data:
+        print("Error: Invalid request data received. Missing post_id or account_name.", file=sys.stderr) # Log the error
+        # Return an error response to n8n
+        return jsonify({'status': 'error', 'message': 'Invalid request data. Requires post_id and account_name in JSON body.'}), 400 # Bad Request
+
+    # Extract post_id and account_name from the JSON data
+    post_id = request_data['post_id']
+    account_name = request_data['account_name']
+
+    # Call the core bot logic function with the data from the request
+    print(f"Calling process_post function with Post_ID: {post_id}, Account: {account_name}") # Log before calling core logic
+    result = process_post(post_id, account_name)
+
+    # Return the result from the process_post function as a JSON response to n8n
+    # jsonify converts the Python dictionary to a JSON string and sets the Content-Type header
+    print(f"Returning result for Post_ID {post_id}: {result}") # Log the result being returned
+    # We return a 200 status code because the endpoint received and processed the request successfully,
+    # even if the bot logic (process_post) itself resulted in a 'failure' status in the JSON body.
+    return jsonify(result), 200 # OK
+
+# --- Main Execution (Starts Flask Server) ---
+if __name__ == "__main__":
+    # This block no longer processes a single post based on command line args.
+    # Instead, it starts the Flask web server.
+
+    print("Starting Flask web server to listen for n8n requests...")
+
+    # Railway exposes the app on a port specified by the PORT environment variable
+    # We need to get this port number
+    port = int(os.environ.get("PORT", 8000)) # Default to 8000 for local testing if PORT isn't set by env
+
+    # Run the Flask app
+    # host='0.0.0.0' makes the server accessible externally (needed for Railway)
+    # port=port uses the port provided by Railway
+    app.run(host='0.0.0.0', port=port)
