@@ -1,28 +1,33 @@
 import os
 import json
 import time
-import requests # Used for both posting (potentially) and insights
+import requests # For making API calls
 import gspread
 from google.oauth2.service_account import Credentials
 import sys
-import traceback # Keep this uncommented for debugging if needed
-from flask import Flask, request, jsonify # Ensure Flask, request, jsonify are imported
+import traceback
+from flask import Flask, request, jsonify
 
-# --- Your Existing Configuration (and any new ones needed for insights) ---
+# --- Configuration ---
 GOOGLE_CREDENTIALS_JSON_CONTENT = os.environ.get('GOOGLE_CREDENTIALS_JSON_CONTENT')
 GOOGLE_SHEET_URL = os.environ.get('GOOGLE_SHEET_URL')
 READY_TO_POST_WORKSHEET_NAME = os.environ.get('READY_TO_POST_WORKSHEET_NAME', 'Ready_To_Post')
-THREADS_API_BASE_URL = os.environ.get('THREADS_API_BASE_URL', 'https://graph.threads.net/v1.0/') # Used by your posting logic
-POST_DELAY_SECONDS = int(os.environ.get('POST_DELAY_SECONDS', 30)) # Ensure it's an int
+# THREADS_API_BASE_URL is used for posting, insights uses a different base for graph.threads.net
+# POST_DELAY_SECONDS for your posting logic if it's still relevant there.
+POST_DELAY_SECONDS = int(os.environ.get('POST_DELAY_SECONDS', 30))
+
 
 # --- Initialize Flask App ---
 app = Flask(__name__)
 
-# --- Your Existing Helper Functions (get_google_sheet_client, get_post_data, update_post_status, etc.) ---
-# PASTE ALL YOUR EXISTING HELPER FUNCTIONS HERE (e.g., get_google_sheet_client, get_post_data, update_post_status, make_threads_api_request, create_threads_container, publish_threads_container)
-# ... (ensure they are correctly defined) ...
+# --- Helper Functions ---
+#### YOUR EXISTING CODE START ####
+# PASTE ALL YOUR EXISTING HELPER FUNCTIONS HERE
+# (e.g., get_google_sheet_client, get_post_data, update_post_status, 
+# make_threads_api_request for posting if you used it, 
+# create_threads_container, publish_threads_container)
 
-# Example:
+# Example get_google_sheet_client (ensure yours is complete)
 def get_google_sheet_client():
     """Authenticates with Google Sheets using service account JSON content from env var."""
     try:
@@ -30,94 +35,92 @@ def get_google_sheet_client():
             'https://www.googleapis.com/auth/spreadsheets',
             'https://www.googleapis.com/auth/drive'
         ]
-        print("Attempting to load credentials from environment variable GOOGLE_CREDENTIALS_JSON_CONTENT")
+        # print("Attempting to load credentials from GOOGLE_CREDENTIALS_JSON_CONTENT") # Debug
         if not GOOGLE_CREDENTIALS_JSON_CONTENT:
-             print("Error: GOOGLE_CREDENTIALS_JSON_CONTENT environment variable is not set in Railway.", file=sys.stderr)
+             print("Error: GOOGLE_CREDENTIALS_JSON_CONTENT environment variable is not set.", file=sys.stderr)
              return None
         try:
             service_account_info = json.loads(GOOGLE_CREDENTIALS_JSON_CONTENT)
-            print("Successfully loaded service account info from environment variable.")
         except json.JSONDecodeError as e:
-             print(f"Error reading credentials from env var: Could not decode JSON from GOOGLE_CREDENTIALS_JSON_CONTENT. Content might be invalid JSON.", file=sys.stderr)
-             traceback.print_exc(file=sys.stderr)
+             print(f"Error decoding JSON from GOOGLE_CREDENTIALS_JSON_CONTENT: {e}", file=sys.stderr)
              return None
         credentials = Credentials.from_service_account_info(service_account_info, scopes=scopes)
-        print("Successfully created credentials object from env var.")
         client = gspread.authorize(credentials)
-        print(f"Successfully authorized gspread client for sheet: {GOOGLE_SHEET_URL}")
         sheet = client.open_by_url(GOOGLE_SHEET_URL)
-        print("Successfully opened Google Sheet object.")
+        # print("Successfully connected to Google Sheet.") # Debug
         return sheet
     except Exception as e:
-        print(f"Error connecting to Google Sheets after loading credentials.", file=sys.stderr)
+        print(f"Error connecting to Google Sheets: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         return None
 
-# --- (Paste your other helper functions here too) ---
+# --- (Ensure all your other original helper functions are pasted here) ---
 def get_post_data(sheet, post_id):
-    # Your implementation
-    pass
+    # YOUR IMPLEMENTATION for get_post_data
+    # This function should read the "Ready_To_Post" sheet, find the row by post_id,
+    # extract Block_1_Content, Block_2_Content, etc.
+    # Return post_data (dict) and row_index.
+    # Example:
+    # worksheet = sheet.worksheet(READY_TO_POST_WORKSHEET_NAME)
+    # ... find row, get values, create dict ...
+    # return post_data_dict, cell.row
+    print(f"Placeholder: get_post_data for {post_id}")
+    return {"Block_1_Content": "Test Block 1", "Status": "Ready"}, 2 # Placeholder
 
 def update_post_status(sheet, row_index, status, threads_post_id=None, notes=None):
-    # Your implementation
+    # YOUR IMPLEMENTATION for update_post_status
+    # This function updates the Google Sheet row with the new status, ID, notes.
+    print(f"Placeholder: update_post_status for row {row_index} to {status}")
     pass
 
-def make_threads_api_request(endpoint, method='POST', params=None, data=None, headers=None, retries=3, delay=10):
-    # Your implementation (if used for posting directly, or adapt for insights if needed)
-    # For insights, we'll likely make a direct requests.get() call later in the insights endpoint itself
-    pass
+#### YOUR EXISTING CODE END ####
 
-def create_threads_container(user_id, access_token, text_content, reply_to_id=None):
-    # Your implementation
-    pass
 
-def publish_threads_container(user_id, access_token, creation_id):
-    # Your implementation
-    pass
-
-# --- Your Existing Core Bot Logic Function for Posting ---
+# --- Core Bot Logic Function for Posting ---
+#### YOUR EXISTING CODE START ####
 def process_post(post_id_to_post, account_name_to_use):
     # PASTE YOUR EXISTING `process_post` FUNCTION LOGIC HERE
     # This function is called by your `/process_post` Flask route.
-    print(f"LOG: Simulating `process_post` for Post_ID: {post_id_to_post}, Account: {account_name_to_use}")
-    # Replace with your actual logic that uses instagrapi or direct API calls
-    # based on the account_name_to_use to fetch its specific credentials
-    # (e.g., THREADS_USER_ID_{ACCOUNT_NAME}, THREADS_ACCESS_TOKEN_{ACCOUNT_NAME})
-    # from environment variables.
+    # It should use instagrapi or direct API calls for posting,
+    # retrieving credentials like THREADS_USER_ID_{ACCOUNT_NAME} 
+    # and THREADS_ACCESS_TOKEN_{ACCOUNT_NAME} from environment variables.
+    print(f"LOG: `process_post` called for Post_ID: {post_id_to_post}, Account: {account_name_to_use}")
     
-    # This is just a placeholder to ensure the structure is complete
-    # Your actual function will do the sheet reading, API calls for posting, and sheet updating.
+    # Example: Fetching posting credentials
+    # threads_user_id_for_posting = os.environ.get(f'THREADS_USER_ID_{account_name_to_use.upper()}')
+    # threads_access_token_for_posting = os.environ.get(f'THREADS_ACCESS_TOKEN_{account_name_to_use.upper()}') # This might be the same token as for insights or a different one
     
-    # Example: Fetching credentials (you likely have this or similar)
-    # threads_user_id = os.environ.get(f'THREADS_USER_ID_{account_name_to_use.upper()}')
-    # threads_access_token = os.environ.get(f'THREADS_ACCESS_TOKEN_{account_name_to_use.upper()}')
-    # if not threads_user_id or not threads_access_token:
-    #     return {'status': 'failure', 'error_message': f"Credentials not found for account {account_name_to_use}"}
+    # if not threads_user_id_for_posting or not threads_access_token_for_posting:
+    #     return {'status': 'failure', 'error_message': f"Posting credentials not found for account {account_name_to_use}"}
 
-    # ... your posting logic ...
+    # ... your actual sheet reading, instagrapi/API posting logic ...
 
-    # Return a dictionary like:
-    return {'status': 'success_simulation', 'threads_post_id': 'simulated_id_123'}
+    # For now, returning a simulation
+    print(f"LOG: Simulating post for post_id: {post_id_to_post} to account: {account_name_to_use}")
+    return {'status': 'success_simulation', 'threads_post_id': 'simulated_threads_id_12345'}
+#### YOUR EXISTING CODE END ####
 
 
 # --- Existing Flask Endpoint for Posting ---
 @app.route('/process_post', methods=['POST'])
 def process_post_endpoint():
+    #### YOUR EXISTING CODE START ####
     # PASTE YOUR EXISTING `/process_post` FLASK ROUTE LOGIC HERE
     # This typically gets post_id and account_name from request.json,
     # then calls your process_post() function.
     print("LOG: /process_post endpoint called")
     request_data = request.get_json()
     if not request_data or 'post_id' not in request_data or 'account_name' not in request_data:
-        return jsonify({'status': 'error', 'message': 'Invalid request data for posting.'}), 400
+        return jsonify({'status': 'error', 'message': 'Invalid request data for posting. Requires post_id and account_name.'}), 400
     
     post_id = request_data['post_id']
     account_name = request_data['account_name']
     
     print(f"LOG: Calling process_post function with Post_ID: {post_id}, Account: {account_name}")
-    result = process_post(post_id, account_name) # Call your main posting logic
+    result = process_post(post_id, account_name) 
     print(f"LOG: Returning result for /process_post for Post_ID {post_id}: {result}")
     return jsonify(result), 200
+    #### YOUR EXISTING CODE END ####
 
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -145,54 +148,108 @@ def get_thread_insights_route():
         return jsonify({"error": "Missing 'threads_post_id' or 'account_name' in N8N data for insights"}), 400
 
     access_token = None
-    # **IMPORTANT**: Use the exact environment variable name you have set on Railway
-    # for TESTACCOUNT's insights-capable token.
-    # If your env var for TESTACCOUNT is THREADS_ACCESS_TOKEN_TESTACCOUNT, use that.
-    # If it's just TESTACCOUNT_TOKEN, use that.
-    # For now, this logic specifically handles "TESTACCOUNT".
-    # You will need to add similar `elif` blocks for "ACC1", "ACC2", etc.,
-    # once you have their tokens and corresponding environment variable names.
-    
-    token_env_var_name_used = None # To store which env var name was attempted
+    # **IMPORTANT**: This logic assumes your environment variable for TESTACCOUNT's
+    # insights-capable token is named THREADS_ACCESS_TOKEN_TESTACCOUNT.
+    # Adjust the string if your actual environment variable name is different.
+    token_env_var_name_used = None 
 
     if account_name_from_n8n.upper() == "TESTACCOUNT":
-        # !!! REPLACE 'THREADS_ACCESS_TOKEN_TESTACCOUNT' WITH YOUR ACTUAL ENV VAR NAME FOR TESTACCOUNT !!!
-        token_env_var_name_used = 'THREADS_ACCESS_TOKEN_TESTACCOUNT' 
+        token_env_var_name_used = 'THREADS_ACCESS_TOKEN_TESTACCOUNT' # Ensure this exact name is in Railway
         access_token = os.getenv(token_env_var_name_used)
-    # Example for ACC1 (you'll add these later):
+    # Add elif blocks here later for "ACC1", "ACC2", etc., when you have their tokens and env vars
+    # For example:
     # elif account_name_from_n8n.upper() == "ACC1":
-    #     token_env_var_name_used = 'THREADS_ACCESS_TOKEN_ACC1' # Or whatever you name it
+    #     token_env_var_name_used = 'THREADS_ACCESS_TOKEN_ACC1' 
     #     access_token = os.getenv(token_env_var_name_used)
     else:
-        # Fallback for other account names, construct dynamically
-        # This assumes your env vars for ACC1-ACC10 will be THREADS_ACCESS_TOKEN_ACC1, THREADS_ACCESS_TOKEN_ACC2 etc.
-        token_env_var_name_used = f"THREADS_ACCESS_TOKEN_{account_name_from_n8n.upper()}"
+        # Fallback or error for unconfigured accounts
+        token_env_var_name_used = f"THREADS_ACCESS_TOKEN_{account_name_from_n8n.upper()}" # Attempt dynamic
         access_token = os.getenv(token_env_var_name_used)
+        if not access_token: # If dynamic attempt fails and it's not TESTACCOUNT
+             print(f"LOG: Account name '{account_name_from_n8n}' not explicitly configured and dynamic token retrieval failed.")
+             return jsonify({"error": f"Account '{account_name_from_n8n}' not configured for insights token."}), 400
 
     print(f"LOG: Attempting to retrieve token for '{account_name_from_n8n}' using env var name: '{token_env_var_name_used}'")
 
     if not access_token:
-        print(f"CRITICAL ERROR: Token NOT FOUND for account '{account_name_from_n8n}' using env var '{token_env_var_name_used}'. Please check Railway environment variables.")
-        return jsonify({"error": f"Server configuration error: Token for account '{account_name_from_n8n}' not set up. Expected env var: {token_env_var_name_used}"}), 500
+        print(f"CRITICAL ERROR: Token NOT FOUND for account '{account_name_from_n8n}' using env var '{token_env_var_name_used}'. Check Railway env vars.")
+        return jsonify({"error": f"Server configuration error: Token for '{account_name_from_n8n}' not found. Expected env var: {token_env_var_name_used}"}), 500
     else:
         print(f"LOG: Successfully retrieved token (token length: {len(access_token)}).")
 
-    # --- STAGE 1: Placeholder response - just send back what you received to confirm ---
-    # --- We will add the actual Threads API call logic here in the next step ---
-    response_data = {
-        "message": "Railway endpoint /get_thread_insights reached successfully! (Stage 1 Test - Token Retrieval)",
-        "received_threads_post_id": threads_post_id,
-        "received_account_name": account_name_from_n8n,
-        "attempted_token_env_var": token_env_var_name_used,
-        "token_found_and_loaded": True,
-        "next_step": "Implement actual Threads Insights API call using this token."
+    # --- Actual Threads Insights API Call ---
+    metrics_list = "likes,replies,reposts,quotes,shares,views" 
+    insights_api_url = f"https://graph.threads.net/v1.0/{threads_post_id}/insights"
+    
+    # For GET requests with parameters, use the 'params' argument in requests.get()
+    api_params = {
+        "metric": metrics_list,
+        "access_token": access_token  # The token for the specific user whose media it is
     }
-    print(f"LOG: Sending placeholder response back to N8N: {response_data}")
-    return jsonify(response_data), 200
+    
+    print(f"LOG: Calling Threads Insights API: GET {insights_api_url} for account {account_name_from_n8n}")
+
+    try:
+        response = requests.get(insights_api_url, params=api_params, timeout=30) # 30-second timeout
+        print(f"LOG: Threads API Response Status Code: {response.status_code}")
+        print(f"LOG: Threads API Response Content: {response.text[:500]}...") # Log beginning of response text
+        response.raise_for_status()  # Raise an HTTPError for bad responses (4XX or 5XX)
+        
+        threads_api_response_data = response.json()
+        print(f"LOG: Successfully received and parsed JSON from Threads Insights API: {threads_api_response_data}")
+        
+        extracted_metrics = {}
+        if 'data' in threads_api_response_data and isinstance(threads_api_response_data['data'], list):
+            for metric_entry in threads_api_response_data['data']:
+                metric_name = metric_entry.get('name')
+                # Media insights have values as an array of objects, each with a 'value'
+                if metric_entry.get('values') and isinstance(metric_entry['values'], list) and len(metric_entry['values']) > 0:
+                    metric_value = metric_entry['values'][0].get('value')
+                    if metric_name and metric_value is not None:
+                        extracted_metrics[metric_name] = metric_value
+                # This 'total_value' structure is more for User Insights, but good to have a robust parser
+                elif 'total_value' in metric_entry and isinstance(metric_entry['total_value'], dict):
+                    metric_value = metric_entry['total_value'].get('value')
+                    if metric_name and metric_value is not None:
+                        extracted_metrics[metric_name] = metric_value
+        
+        if not extracted_metrics:
+            print("LOG: No specific metrics parsed from Threads API response. Might be empty or unexpected format.")
+            return jsonify({
+                "warning": "No specific metrics parsed from Threads API response.",
+                "raw_threads_api_response": threads_api_response_data  # Send raw response for debugging
+            }), 200 
+            
+        print(f"LOG: Sending extracted insights back to N8N: {extracted_metrics}")
+        return jsonify(extracted_metrics), 200
+
+    except requests.exceptions.HTTPError as http_err:
+        error_content = "No response content"
+        if http_err.response is not None:
+            error_content = http_err.response.text
+        error_details = f"HTTP error occurred calling Threads API: {http_err} - Response: {error_content}"
+        print(f"ERROR: {error_details}")
+        return jsonify({"error": "Failed to fetch from Threads API (HTTP Error)", "details": str(http_err), "response_text": error_content}), getattr(http_err.response, 'status_code', 500)
+    except requests.exceptions.RequestException as req_err:
+        error_details = f"Request error occurred calling Threads API: {req_err}"
+        print(f"ERROR: {error_details}")
+        return jsonify({"error": "Failed to fetch from Threads API (Request Error)", "details": str(req_err)}), 500
+    except ValueError as json_err: 
+        response_text_for_error = ""
+        if 'response' in locals() and response is not None:
+            response_text_for_error = response.text
+        error_details = f"JSON decode error from Threads API response: {json_err} - Response: {response_text_for_error}"
+        print(f"ERROR: {error_details}")
+        return jsonify({"error": "Failed to parse Threads API response", "details": str(json_err), "response_text": response_text_for_error}), 500
+    except Exception as e:
+        error_details = f"An unexpected error occurred in /get_thread_insights: {e}"
+        print(f"ERROR: {error_details}")
+        traceback.print_exc(file=sys.stderr)
+        return jsonify({"error": "An internal server error occurred in insights endpoint", "details": str(e)}), 500
 
 
 # --- Main Execution (Starts Flask Server) ---
 if __name__ == "__main__":
-    print("Starting Flask web server...")
-    port = int(os.environ.get("PORT", 8080)) # Default to 8080 for local, Railway sets PORT
-    app.run(debug=False, host='0.0.0.0', port=port) # debug=False for production on Railway
+    print("Starting Flask web server to listen for N8N requests...")
+    port = int(os.environ.get("PORT", 8080)) 
+    app.run(debug=False, host='0.0.0.0', port=port) # Run on 0.0.0.0 to be accessible in Railway
